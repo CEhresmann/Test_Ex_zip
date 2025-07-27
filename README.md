@@ -19,7 +19,7 @@
       "download_timeout": "30s",
       "temp_dir": "./temp",
       "archive_dir": "./archives",
-      "allowed_exts": [".pdf", ".jpeg", ".jpg"]
+      "allowed_exts": [".pdf", ".jpeg"]
    }
    ```
 3. Запустите сервис:
@@ -80,7 +80,7 @@
    ```
 4. Скачайте архив:
    ```bash
-   curl -OJ http://localhost:8080/download/1753529031152986520
+   curl -OJ http://localhost:8080/download/<TASK_ID>
    ```
 
 ### Безопасность параллелизма

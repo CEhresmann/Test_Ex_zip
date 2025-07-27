@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/awesome-gocui/gocui"
@@ -26,6 +29,19 @@ type TaskInfo struct {
 	Status  string
 	Files   []string
 	Archive string
+}
+
+type FileInfo struct {
+	URL    string `json:"url"`
+	Status string `json:"status"`
+}
+
+type TaskStatus struct {
+	ID        string     `json:"id"`
+	Status    string     `json:"status"`
+	Files     []FileInfo `json:"files"`
+	Archive   string     `json:"archive"`
+	CreatedAt string     `json:"created_at"`
 }
 
 func StartGUI() error {
@@ -49,11 +65,19 @@ func StartGUI() error {
 	if err = g.MainLoop(); err != nil && !errors.Is(err, gocui.ErrQuit) {
 		return err
 	}
+
 	return nil
 }
 
 func (s *GUIState) layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
+
+	baseTitles := map[string]string{
+		"help":   "Инструкции",
+		"tasks":  "Задачи",
+		"output": "Вывод",
+		"input":  "Команда",
+	}
 
 	if v, err := g.SetView("help", 0, 0, maxX-1, 6, 0); err != nil {
 		if !errors.Is(err, gocui.ErrUnknownView) {
@@ -61,7 +85,8 @@ func (s *GUIState) layout(g *gocui.Gui) error {
 		}
 		v.Wrap = true
 		fmt.Fprintln(v, "c: Создать задачу | a: Добавить файл | s: Статус | d: Скачать")
-		fmt.Fprintln(v, "Tab: Переключение | Ctrl+C: Выход")
+		fmt.Fprintln(v, "Tab: Переключение | Стрелки: Выбор задачи | Ctrl+C: Выход")
+
 	}
 
 	tasksHeight := maxY/2 - 3
@@ -72,7 +97,13 @@ func (s *GUIState) layout(g *gocui.Gui) error {
 		v.Highlight = true
 		v.SelBgColor = gocui.ColorGreen
 		v.SelFgColor = gocui.ColorBlack
-		s.updateTasksView(v)
+
+		v.Editable = false
+		v.Wrap = false
+
+		v.SetCursor(0, s.SelectedTask)
+
+		s.updateTView(v, g)
 	}
 
 	if v, err := g.SetView("output", maxX/2+1, 7, maxX-1, 7+tasksHeight, 0); err != nil {
@@ -81,7 +112,7 @@ func (s *GUIState) layout(g *gocui.Gui) error {
 		}
 		v.Autoscroll = true
 		v.Wrap = true
-		s.updateOutputView(v)
+		s.updateOView(v)
 	}
 
 	if v, err := g.SetView("input", 0, maxY-4, maxX-1, maxY-1, 0); err != nil {
@@ -94,13 +125,6 @@ func (s *GUIState) layout(g *gocui.Gui) error {
 		if _, err := g.SetCurrentView("input"); err != nil {
 			return err
 		}
-	}
-
-	baseTitles := map[string]string{
-		"help":   "Инструкции",
-		"tasks":  "Задачи",
-		"output": "Вывод",
-		"input":  "Команда",
 	}
 
 	currentView := g.CurrentView()
@@ -145,7 +169,7 @@ func (s *GUIState) keybindings() error {
 		if err := s.g.SetKeybinding(view, 'c', gocui.ModNone, s.createTask); err != nil {
 			return err
 		}
-		if err := s.g.SetKeybinding(view, 'a', gocui.ModNone, s.addFilePrompt); err != nil {
+		if err := s.g.SetKeybinding(view, 'a', gocui.ModNone, s.promt); err != nil {
 			return err
 		}
 		if err := s.g.SetKeybinding(view, 's', gocui.ModNone, s.showStatus); err != nil {
@@ -156,7 +180,7 @@ func (s *GUIState) keybindings() error {
 		}
 	}
 
-	if err := s.g.SetKeybinding("input", gocui.KeyEnter, gocui.ModNone, s.executeCommand); err != nil {
+	if err := s.g.SetKeybinding("input", gocui.KeyEnter, gocui.ModNone, s.runCommand); err != nil {
 		return err
 	}
 
@@ -169,8 +193,13 @@ func (s *GUIState) cursorDown(g *gocui.Gui, v *gocui.View) error {
 	}
 	if s.SelectedTask < len(s.Tasks)-1 {
 		s.SelectedTask++
+	} else {
+		s.SelectedTask = 0
 	}
-	s.updateTasksView(v)
+
+	if tasksView, err := g.View("tasks"); err == nil {
+		s.updateTView(tasksView, g)
+	}
 	return nil
 }
 
@@ -180,15 +209,23 @@ func (s *GUIState) cursorUp(g *gocui.Gui, v *gocui.View) error {
 	}
 	if s.SelectedTask > 0 {
 		s.SelectedTask--
+	} else {
+		s.SelectedTask = len(s.Tasks) - 1
 	}
-	s.updateTasksView(v)
+
+	if tasksView, err := g.View("tasks"); err == nil {
+		s.updateTView(tasksView, g)
+	}
 	return nil
 }
 
 func (s *GUIState) nextView(g *gocui.Gui, v *gocui.View) error {
-	views := []string{"input", "tasks", "output"}
+	views := []string{"tasks", "output", "input"}
 	currentView := v.Name()
-
+	if currentView == "" {
+		_, err := g.SetCurrentView(views[0])
+		return err
+	}
 	nextIndex := 0
 	for i, name := range views {
 		if name == currentView {
@@ -201,18 +238,32 @@ func (s *GUIState) nextView(g *gocui.Gui, v *gocui.View) error {
 	return err
 }
 
-func (s *GUIState) updateTasksView(v *gocui.View) {
+func (s *GUIState) updateTView(v *gocui.View, g *gocui.Gui) {
 	v.Clear()
-	for i, task := range s.Tasks {
-		if i == s.SelectedTask {
-			fmt.Fprintf(v, "> %s [%s]\n", task.ID, task.Status)
-		} else {
-			fmt.Fprintf(v, "  %s [%s]\n", task.ID, task.Status)
+	_, maxY := g.Size()
+	tasksHeight := maxY/2 - 3
+	for _, task := range s.Tasks {
+		fmt.Fprintf(v, "%s [%s]\n", task.ID, task.Status)
+	}
+
+	if len(s.Tasks) > 0 {
+		if s.SelectedTask >= len(s.Tasks) {
+			s.SelectedTask = len(s.Tasks) - 1
+		}
+		if s.SelectedTask < 0 {
+			s.SelectedTask = 0
+		}
+
+		v.SetCursor(0, s.SelectedTask)
+
+		v.SetOrigin(0, 0)
+		if s.SelectedTask >= tasksHeight-1 {
+			v.SetOrigin(0, s.SelectedTask-tasksHeight+2)
 		}
 	}
 }
 
-func (s *GUIState) updateOutputView(v *gocui.View) {
+func (s *GUIState) updateOView(v *gocui.View) {
 	v.Clear()
 	for _, line := range s.OutputLines {
 		fmt.Fprintln(v, line)
@@ -223,16 +274,16 @@ func (s *GUIState) quit(g *gocui.Gui, v *gocui.View) error {
 	return gocui.ErrQuit
 }
 
-func (s *GUIState) executeCommand(g *gocui.Gui, v *gocui.View) error {
+func (s *GUIState) runCommand(g *gocui.Gui, v *gocui.View) error {
 	command := strings.TrimSpace(v.Buffer())
 	v.Clear()
 	v.SetCursor(0, 0)
 	s.InputBuffer = ""
 
 	switch {
-	case strings.HasPrefix(command, "c"):
+	case command == "c":
 		s.createTask(g, v)
-	case strings.HasPrefix(command, "a"):
+	case strings.HasPrefix(command, "a "):
 		url := strings.TrimSpace(strings.TrimPrefix(command, "a"))
 		if url == "" {
 			s.addOutput("Usage: a <url>")
@@ -244,9 +295,9 @@ func (s *GUIState) executeCommand(g *gocui.Gui, v *gocui.View) error {
 		}
 		taskID := s.Tasks[s.SelectedTask].ID
 		s.addFile(g, v, taskID, url)
-	case strings.HasPrefix(command, "s"):
+	case command == "s":
 		s.showStatus(g, v)
-	case strings.HasPrefix(command, "d"):
+	case command == "d":
 		s.downloadArchive(g, v)
 	default:
 		s.addOutput("Unknown command: " + command)
@@ -256,10 +307,9 @@ func (s *GUIState) executeCommand(g *gocui.Gui, v *gocui.View) error {
 
 func (s *GUIState) addOutput(line string) {
 	s.OutputLines = append(s.OutputLines, line)
-
 	s.g.Update(func(g *gocui.Gui) error {
 		if v, err := g.View("output"); err == nil {
-			s.updateOutputView(v)
+			s.updateOView(v)
 		}
 		return nil
 	})
@@ -292,9 +342,8 @@ func (s *GUIState) createTask(g *gocui.Gui, v *gocui.View) error {
 	s.addOutput("Created task: " + result.ID)
 
 	g.Update(func(g *gocui.Gui) error {
-		v, err := g.View("tasks")
-		if err == nil {
-			s.updateTasksView(v)
+		if v, err := g.View("tasks"); err == nil {
+			s.updateTView(v, g)
 		}
 		return nil
 	})
@@ -302,8 +351,40 @@ func (s *GUIState) createTask(g *gocui.Gui, v *gocui.View) error {
 	return nil
 }
 
+func transGDLink(original string) string {
+	if strings.Contains(original, "drive.google.com/file/d/") {
+		re := regexp.MustCompile(`/file/d/([^/]+)`)
+		matches := re.FindStringSubmatch(original)
+		if len(matches) > 1 {
+			fileID := matches[1]
+			return "https://drive.google.com/uc?id=" + fileID + "&export=download"
+		}
+	}
+	return original
+}
+
+func isValidExt(uri string) bool {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return false
+	}
+
+	ext := strings.ToLower(filepath.Ext(u.Path))
+	return ext == ".pdf" || ext == ".jpg"
+}
+
 func (s *GUIState) addFile(g *gocui.Gui, v *gocui.View, taskID, url string) error {
-	data := map[string]string{"url": url}
+	transformedURL := transGDLink(url)
+	if transformedURL != url {
+		s.addOutput("Transformed URL: " + transformedURL)
+	}
+
+	if !isValidExt(transformedURL) {
+		s.addOutput("Error: Only PDF and JPEG files are allowed")
+		return nil
+	}
+
+	data := map[string]string{"url": transformedURL}
 	jsonData, _ := json.Marshal(data)
 
 	resp, err := http.Post(
@@ -332,7 +413,7 @@ func (s *GUIState) addFile(g *gocui.Gui, v *gocui.View, taskID, url string) erro
 		g.Update(func(g *gocui.Gui) error {
 			v, err := g.View("tasks")
 			if err == nil {
-				s.updateTasksView(v)
+				s.updateTView(v, g)
 			}
 			return nil
 		})
@@ -353,11 +434,11 @@ func (s *GUIState) showStatus(g *gocui.Gui, v *gocui.View) error {
 		return nil
 	}
 	taskID := s.Tasks[s.SelectedTask].ID
-	s.showStatusForTask(taskID)
+	s.showStatusLittle(taskID)
 	return nil
 }
 
-func (s *GUIState) showStatusForTask(taskID string) {
+func (s *GUIState) showStatusLittle(taskID string) {
 	resp, err := http.Get("http://localhost:8080/status/" + taskID)
 	if err != nil {
 		s.addOutput("Error getting status: " + err.Error())
@@ -376,12 +457,30 @@ func (s *GUIState) showStatusForTask(taskID string) {
 		return
 	}
 
-	var prettyJSON bytes.Buffer
-	if err := json.Indent(&prettyJSON, body, "", "  "); err != nil {
-		s.addOutput(string(body))
-	} else {
-		s.addOutput(prettyJSON.String())
+	var status TaskStatus
+	if err := json.Unmarshal(body, &status); err != nil {
+		s.addOutput("Error parsing status: " + err.Error())
+		return
 	}
+
+	var output strings.Builder
+	output.WriteString(fmt.Sprintf("Task ID: %s\n", taskID))
+	output.WriteString(fmt.Sprintf("Status: %s\n", status.Status))
+	output.WriteString(fmt.Sprintf("Created at: %s\n", status.CreatedAt))
+
+	output.WriteString("Files:\n")
+	for i, file := range status.Files {
+		output.WriteString(fmt.Sprintf("  %d. URL: %s\n", i+1, file.URL))
+		output.WriteString(fmt.Sprintf("     Status: %s\n", file.Status))
+	}
+
+	if status.Archive != "" {
+		output.WriteString(fmt.Sprintf("Archive: %s\n", status.Archive))
+	} else {
+		output.WriteString("Archive: not ready\n")
+	}
+
+	s.addOutput(output.String())
 }
 
 func (s *GUIState) downloadArchive(g *gocui.Gui, v *gocui.View) error {
@@ -390,11 +489,11 @@ func (s *GUIState) downloadArchive(g *gocui.Gui, v *gocui.View) error {
 		return nil
 	}
 	taskID := s.Tasks[s.SelectedTask].ID
-	s.downloadArchiveForTask(taskID)
+	s.downloadArchiveLittle(taskID)
 	return nil
 }
 
-func (s *GUIState) downloadArchiveForTask(taskID string) {
+func (s *GUIState) downloadArchiveLittle(taskID string) {
 	resp, err := http.Get("http://localhost:8080/download/" + taskID)
 	if err != nil {
 		s.addOutput("Error downloading archive: " + err.Error())
@@ -423,7 +522,7 @@ func (s *GUIState) downloadArchiveForTask(taskID string) {
 	s.addOutput("Archive saved as " + filename)
 }
 
-func (s *GUIState) addFilePrompt(g *gocui.Gui, v *gocui.View) error {
+func (s *GUIState) promt(g *gocui.Gui, v *gocui.View) error {
 	if len(s.Tasks) == 0 {
 		s.addOutput("No tasks available")
 		return nil
