@@ -11,11 +11,12 @@ const (
 	StatusPending    TaskStatus = "pending"
 	StatusProcessing TaskStatus = "processing"
 	StatusCompleted  TaskStatus = "completed"
+	StatusFailed     TaskStatus = "failed"
 )
 
 type File struct {
 	URL    string `json:"url"`
-	Status string `json:"status"` // "queued", "downloaded", "failed"
+	Status string `json:"status"`
 	Error  string `json:"error,omitempty"`
 	Path   string `json:"-"`
 }

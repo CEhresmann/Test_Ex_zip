@@ -136,14 +136,15 @@ func (m *TaskManager) processTask(task *internal.Task) {
 		filePaths[i] = file.Path
 		fileNames[i] = filepath.Base(file.URL)
 	}
-
+	task.Mu.Lock()
 	if err := CreateArchive(filePaths, fileNames, archivePath); err == nil {
-		task.Mu.Lock()
 		task.Status = internal.StatusCompleted
 		task.ArchivePath = archivePath
-		task.CompletedAt = time.Now()
-		task.Mu.Unlock()
+	} else {
+		task.Status = internal.StatusFailed
 	}
+	task.CompletedAt = time.Now()
+	task.Mu.Unlock()
 }
 
 func (m *TaskManager) GetTask(taskID string) (*internal.Task, error) {

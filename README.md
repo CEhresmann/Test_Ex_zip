@@ -1,50 +1,97 @@
 # Test_Ex_zip
-A lightweight HTTP service that downloads files from public URLs, packages them into ZIP archives, and manages concurrent processing tasks with strict resource limits.
+Легковесный HTTP-сервис для скачивания файлов по публичным URL, упаковки их в ZIP-архивы и управления параллельными задачами с строгими ограничениями ресурсов.
 
-### API Endpoints
-- `POST /tasks` - Create new task
-- `POST /tasks/{id}` - Add file URL to task
-- `GET /status/{id}` - Get task status
-- `GET /download/{id}` - Download ZIP archive
+### Установка
+1. Клонируйте репозиторий:
+   ```shell
+   git clone https://github.com/CEhresmann/Test_Ex_zip.git
+   ```
+   ```shell
+   cd Test_Ex_zip
+   ```
+2. Создайте конфигурационный файл `configs/conf.json`:
+   ```json
+   {
+      "server_address": ":8080",
+      "max_tasks": 3,
+      "max_files": 3,
+      "processing_timeout": "5m",
+      "download_timeout": "30s",
+      "temp_dir": "./temp",
+      "archive_dir": "./archives",
+      "allowed_exts": [".pdf", ".jpeg", ".jpg"]
+   }
+   ```
+3. Запустите сервис:
+  `go run server/main.go` - Стандартный режим (только API)
 
-#### Concurrency Safety:
-  - errgroup for parallel file downloads
-  - RWMutex for task access protection
-  - Buffered channel for task limiting
+   `go run server/main.go -gui` - С графическим интерфейсом
 
-#### Requirements Compliance:
-  - Max 3 files per task
-  - Max 3 concurrent tasks
-  - File type filtering (.pdf, .jpeg, .jpg)
-  - Detailed error reporting
+### API endpoints
+| Метод | endpoint         | Описание                          |
+|-------|------------------|-----------------------------------|
+| POST  | `/tasks`         | Создать новую задачу              |
+| POST  | `/tasks/{id}`    | Добавить URL в задачу (тело JSON: `{"url":"..."}`) |
+| GET   | `/status/{id}`   | Проверить статус задачи           |
+| GET   | `/download/{id}` | Скачать ZIP-архив                 |
 
-#### Idiomatic Go:
-  - Clean layer separation
-  - Error handling
-  - Efficient routing
+### Графический интерфейс (CLI)
+![Пример работы GUI](gui-screenshot.png)
 
-#### Easy Deployment:
-  - Standard library only
-  - Minimal dependencies
-  - Easy environment setup
+После запуска с флагом `-gui` открывается текстовый интерфейс управления. Основные функции:
 
-#### Design Principles
- - `Worker Pool Pattern`: Limits concurrent tasks using buffered channels
- - `Error Group`: Manages parallel file downloads with synchronization
- - `Resource Efficiency`: Stream processing avoids large memory allocations
- - `Graceful Degradation`: Processes available files when some downloads fail
+### Управление
+- `Tab`: Переключение между областями
+- `Ctrl+C`: Выход из программы
+- `c`: Создать новую задачу
+- `a`: Добавить файл в выбранную задачу
+- `s`: Показать статус выбранной задачи
+- `d`: Скачать архив выбранной задачи
 
+### Области интерфейса
+1. **Задачи (Tasks)**:
+   - Список всех задач с их статусами
+   - Выделение текущей выбранной задачи
 
-### Run service: 
-```bash
-go run cmd/server/main.go
-```
+2. **Вывод (Output)**:
+   - Отображение результатов операций
+   - Показ статусов задач в формате JSON
+   - Сообщения об ошибках
 
+3. **Команды (Command)**:
+   - Прямой ввод команд:
+      - `create` - создать задачу
+      - `add <ID_задачи> <URL>` - добавить файл
+      - `status <ID_задачи>` - показать статус
+      - `download <ID_задачи>` - скачать архив
 
-### Postman Testing
-1. Import Test_Ex_zip.postman_collection.json
-2. Test scenarios:
-    - Task creation and file addition
-    - Invalid URL handling
-    - Concurrent task limiting
-    - Archive download verification
+## Пример использования
+1. Создайте задачу:
+   ```bash
+   curl -X POST http://localhost:8080/tasks
+   ```
+2. Добавьте файлы (повторите 3 раза с валидными URL):
+   ```bash
+   curl -X POST -H "Content-Type: application/json" -d '{"url":"https://example.com/file1.pdf"}' http://localhost:8080/tasks/<TASK_ID>
+   ```
+3. Проверьте статус (дождитесь статуса "completed"):
+   ```bash
+   curl http://localhost:8080/status/<TASK_ID>
+   ```
+4. Скачайте архив:
+   ```bash
+   curl -OJ http://localhost:8080/download/1753529031152986520
+   ```
+
+### Безопасность параллелизма
+- `errgroup` 
+- RWMutex для защиты доступа к задачам
+- Буферизированные каналы для ограничения задач
+
+### Тестирование с Postman
+1. Импортируйте `Test_Ex_zip.postman_collection.json`
+2. Тестовые сценарии включают:
+   - Полный жизненный цикл задачи
+   - Обработку невалидных URL
+   - Проверку ограничения на 3 параллельные задачи
+   - Скачивание и проверку архивов

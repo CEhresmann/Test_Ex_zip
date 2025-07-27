@@ -46,7 +46,7 @@ func LoadConfig(path string) (*Config, error) {
 		DwnTimeout:  "30s",
 		TempDir:     filepath.Join(os.TempDir(), "archive-service", "temp"),
 		ArchiveDir:  filepath.Join(os.TempDir(), "archive-service", "archives"),
-		AllowedExts: []string{".pdf", ".jpeg", ".jpg"},
+		AllowedExts: []string{".pdf", ".jpeg"},
 	}
 
 	if err = json.Unmarshal(data, &cfg); err != nil {

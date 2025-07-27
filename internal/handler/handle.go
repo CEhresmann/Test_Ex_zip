@@ -3,7 +3,11 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"log"
 	"net/http"
+	"os"
 	"test_ex_zip/internal"
 	"test_ex_zip/internal/service"
 	"time"
@@ -93,7 +97,28 @@ func (h *TaskHandler) DownloadArchive(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, "archive not available")
 		return
 	}
-	http.ServeFile(w, r, task.ArchivePath)
+
+	file, err := os.Open(task.ArchivePath)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to open archive")
+		return
+	}
+	defer file.Close()
+
+	fileInfo, err := file.Stat()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to get file info")
+		return
+	}
+
+	w.Header().Set("Content-Disposition", "attachment; filename="+taskID+".zip")
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", fileInfo.Size()))
+
+	_, err = io.Copy(w, file)
+	if err != nil {
+		log.Printf("Failed to send archive: %v", err)
+	}
 }
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
