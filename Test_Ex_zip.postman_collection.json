@@ -1,0 +1,307 @@
+{
+	"info": {
+		"_postman_id": "00be32ae-57a0-433d-8006-66ecf1b91a13",
+		"name": "Archivator",
+		"description": "Просто лёгкое тестирование некоторых методов Api",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "47087970",
+		"_collection_link": "https://cehresmann-8783997.postman.co/workspace/ce8bb209-13d7-46cb-8eca-6fe3b01b7ec9/collection/47087970-00be32ae-57a0-433d-8006-66ecf1b91a13?action=share&source=collection_link&creator=47087970"
+	},
+	"item": [
+		{
+			"name": "http://localhost:8080/tasks",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"pm.collectionVariables.unset(\"task_id\");",
+							"pm.collectionVariables.unset(\"file_count\");"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Task created\", () => {",
+							"    pm.response.to.have.status(201);",
+							"    const jsonData = pm.response.json();",
+							"    pm.expect(jsonData).to.have.property(\"id\");",
+							"    ",
+							"    pm.collectionVariables.set(\"task_id\", jsonData.id);",
+							"    pm.collectionVariables.set(\"file_count\", 0);",
+							"});"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"url\": \"https://old.mccme.ru/free-books/uchim/book-10.pdf\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8080/tasks",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"tasks"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "New Request",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const pdfFiles = [",
+							"    \"https://old.mccme.ru/free-books/mmmf-lectures/book.38.pdf\",",
+							"    \"https://old.mccme.ru/free-books/yaschenko/v08book-09.pdf\",",
+							"    \"https://old.mccme.ru/free-books/mmmf-lectures/book.29v2.pdf\",",
+							"    \"https://old.mccme.ru/free-books/shapovalov/shapovalov-uzkoe.pdf\",",
+							"    \"https://old.mccme.ru/free-books/shen/shen-log.pdf\",",
+							"    \"https://old.mccme.ru/free-books/mmmf-lectures/book.22.pdf\"",
+							"];",
+							"",
+							"",
+							"const allFiles = [...pdfFiles];",
+							"const randomFile = allFiles[Math.floor(Math.random() * allFiles.length)];",
+							"",
+							"console.log(\"Selected file:\", randomFile);",
+							"console.log(\"Task ID:\", pm.collectionVariables.get(\"task_id\"));",
+							"",
+							"pm.request.body.raw = JSON.stringify({ url: randomFile });",
+							""
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"File added\", () => {",
+							"    if (pm.response.status === 204) {",
+							"        const count = parseInt(pm.collectionVariables.get(\"file_count\")) + 1;",
+							"        pm.collectionVariables.set(\"file_count\", count);",
+							"    } else {",
+							"        pm.expect(pm.response).to.have.status(400); ",
+							"    }",
+							"});",
+							"",
+							"const fileCount = parseInt(pm.collectionVariables.get(\"file_count\"));",
+							"if (fileCount < 3) {",
+							"    postman.setNextRequest(\"Add File\");",
+							"} else {",
+							"    postman.setNextRequest(\"Get Status\");",
+							"}",
+							"",
+							"pm.test(\"Response time is less than 200ms\", function () {",
+							"    pm.expect(pm.response.responseTime).to.be.below(200);",
+							"});",
+							"",
+							"pm.test(\"Response content type is text/xml\", function () { ",
+							"    pm.expect(pm.response.headers.get('Content-Type')).to.include(\"text/xml\");",
+							"});",
+							"",
+							"pm.test(\"Response body is empty for 204 status\", function () {",
+							"    pm.expect(pm.response.text()).to.be.empty;",
+							"});",
+							"",
+							"var template = `",
+							"<style type=\"text/css\">",
+							"    .tftable {font-size:14px;color:#333333;width:100%;border-width: 1px;border-color: #87ceeb;border-collapse: collapse;}",
+							"    .tftable th {font-size:18px;background-color:#87ceeb;border-width: 1px;padding: 8px;border-style: solid;border-color: #87ceeb;text-align:left;}",
+							"    .tftable tr {background-color:#ffffff;}",
+							"    .tftable td {font-size:14px;border-width: 1px;padding: 8px;border-style: solid;border-color: #87ceeb;}",
+							"    .tftable tr:hover {background-color:#e0ffff;}",
+							"</style>",
+							"",
+							"<table class=\"tftable\" border=\"1\">",
+							"    <tr>",
+							"        <th>Error</th>",
+							"    </tr>",
+							"    <tr>",
+							"        <td>No error to display</td>",
+							"    </tr>",
+							"</table>",
+							"`;",
+							"",
+							"function constructVisualizerPayload() {",
+							"    return {}; // No response data for 204",
+							"}",
+							"",
+							"pm.visualizer.set(template, constructVisualizerPayload());",
+							""
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"url\": \"https://old.mccme.ru/free-books/mmmf-lectures/book.22.pdf\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8080/tasks/{{task_id}}",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"tasks",
+						"{{task_id}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "New Request",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const maxChecks = 6;",
+							"let checks = pm.collectionVariables.get(\"status_checks\") || 0;",
+							"",
+							"if (checks >= maxChecks) {",
+							"    postman.setNextRequest(null); ",
+							"}",
+							"",
+							"pm.collectionVariables.set(\"status_checks\", checks + 1);"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status retrieved\", () => {",
+							"    pm.response.to.have.status(200);",
+							"    const jsonData = pm.response.json();",
+							"    pm.expect(jsonData).to.have.property(\"status\");",
+							"    ",
+							"    if (jsonData.status !== \"completed\") {",
+							"        setTimeout(() => {",
+							"            postman.setNextRequest(\"Get Status\");",
+							"        }, 5000);",
+							"    } else {",
+							"        postman.setNextRequest(\"Download Archive\");",
+							"    }",
+							"});"
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8080/status/{{task_id}}",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"status",
+						"{{task_id}}"
+					]
+				},
+				"description": "# API Endpoint: Get Task Status\n\nThis endpoint retrieves the current status of a specific task identified by its unique `task_id`. It is useful for checking the progress or completion of tasks that have been initiated in the system.\n\n## Request\n\n- **Method:** GET\n    \n- **URL:** `http://localhost:8080/status/{{task_id}}`\n    \n- **Path Parameters:**\n    \n    - `task_id` (string): The unique identifier for the task whose status is being queried.\n        \n\n## Response\n\nUpon a successful request, the server responds with a JSON object containing the following fields:\n\n- **status** (string): The current status of the task. This field may contain various states such as \"pending\", \"in progress\", or \"completed\".\n    \n- **files** (array): An array that may contain references to any files associated with the task. This can be useful for tasks that generate output files.\n    \n- **created_at** (string): A timestamp indicating when the task was created.\n    \n\n### Response Example\n\n``` json\n{\n  \"status\": \"\",\n  \"files\": [],\n  \"created_at\": \"\"\n}\n\n ```\n\n## Notes\n\n- Ensure that the `task_id` is valid and corresponds to an existing task in the system to receive accurate status information.\n    \n- A successful response will have a status code of `200`."
+			},
+			"response": []
+		},
+		{
+			"name": "New Request",
+			"request": {
+				"method": "GET",
+				"header": []
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					"pm.test(\"Task created\", function() {",
+					"    pm.response.to.have.status(201);",
+					"    const jsonData = pm.response.json();",
+					"    pm.expect(jsonData).to.have.property('id');",
+					"    ",
+					"    pm.collectionVariables.set(\"task_id\", jsonData.id);",
+					"});"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "status_checks",
+			"value": ""
+		},
+		{
+			"key": "task_id",
+			"value": ""
+		},
+		{
+			"key": "file_count",
+			"value": ""
+		}
+	]
+}
